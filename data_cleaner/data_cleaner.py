@@ -8,29 +8,32 @@ RELATION_FIELDS_TO_GET = BASIC_FIELDS_TO_GET
 
 FLOAT_REG = '^[0-9]+([.]{1}[0-9]+){0,1}$'
 INT_REG = '^[0-9]+$'
-VALID_TAG_NAME = re.compile(r'^([a-z_]+)+([:]{1}([a-z_0-9]+))*$')
+VALID_TAG_NAME = re.compile(r'^(ref:([A-Za-z_0-9.]+){1})$|^(([a-z_]+){1}([:]{1}([a-z_0-9]+))*)$')
 
 
 def clean_tag_name(tag_name):
-    if tag_name.lower() == 'fixme':
-        tag_name = tag_name.lower()
-
-    return tag_name
+    return tag_name.lower()
 
 
 def get_tags(node):
     tags = []
+    fixme_count = 0
 
     for tag in node.iter("tag"):
         tag_name = tag.get('k')
 
         # @see http://wiki.openstreetmap.org/wiki/Key:uir_adr:ADRESA_KOD
-        if not re.match(VALID_TAG_NAME, tag_name) and tag_name not in ['uir_adr:ADRESA_KOD', 'FIXME']:
+        if not re.match(VALID_TAG_NAME, tag_name) and tag_name not in ['uir_adr:ADRESA_KOD', 'FIXME', 'WIFI:SSID']:
             raise ValueError('Invalid tag name \'{}\' for id={}'.format(tag_name, node.get('id')))
 
-        tags.append({'key': clean_tag_name(tag_name), 'value': tag.get('v')})
+        clear_tag_name = clean_tag_name(tag_name)
 
-    return {'tags': tags}
+        if clear_tag_name == 'fixme':
+            fixme_count = fixme_count + 1
+
+        tags.append({'key': clear_tag_name, 'value': tag.get('v')})
+
+    return {'tags': tags}, fixme_count
 
 
 def parse_float(coord_as_string):
@@ -70,9 +73,10 @@ def clean_fields(node, fields):
         else:
             final_node[field] = node.get(field).strip()
 
-    final_node['tags'] = get_tags(node)
+    tags, fixme_count = get_tags(node)
+    final_node['tags'] = tags
 
-    return final_node
+    return final_node, fixme_count
 
 
 def clean_node(node):
