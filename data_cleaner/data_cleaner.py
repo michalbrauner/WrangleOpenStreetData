@@ -15,8 +15,39 @@ def clean_tag_name(tag_name):
     return tag_name.lower()
 
 
+def is_address_tag(tag_name):
+    return tag_name.lower().startswith('addr:')
+
+
+def check_and_clean_street_name(street):
+    if not re.match(r'^[\w.\s-]+$', street):
+        raise ValueError('Street \'{}\' has an invalid name'.format(street))
+
+    return street
+
+
+def check_and_clean_country(country):
+    return country.upper()
+
+
+def check_and_clean_postcode(postcode):
+    if not re.match(r'^[0-9]{5}$', postcode):
+        raise ValueError('Postcode \'{}\' is invalid'.format(postcode))
+
+    return postcode
+
+
+def check_and_clean_housenumber(housenumber):
+    if not re.match(r'^([0-9]+){1}([/]{1}[0-9a-z]+){0,1}$', housenumber):
+        raise ValueError('Housenumber \'{}\' is invalid'.format(housenumber))
+
+    return housenumber
+
+
 def get_tags(node):
     tags = []
+    address = {'street': None, 'country': None, 'postcode': None, 'housenumber': None}
+
     fixme_count = 0
 
     for tag in node.iter("tag"):
@@ -28,12 +59,26 @@ def get_tags(node):
 
         clear_tag_name = clean_tag_name(tag_name)
 
+        tag_value = tag.get('v')
+
         if clear_tag_name == 'fixme':
             fixme_count = fixme_count + 1
+        elif clear_tag_name == 'addr:street':
+            address['street'] = check_and_clean_street_name(tag_value)
+        elif clear_tag_name == 'addr:country':
+            address['country'] = check_and_clean_country(tag_value)
+        elif clear_tag_name == 'addr:postcode':
+            address['postcode'] = check_and_clean_postcode(tag_value)
+        elif clear_tag_name == 'addr:housenumber':
+            address['housenumber'] = check_and_clean_housenumber(tag_value)
 
-        tags.append({'key': clear_tag_name, 'value': tag.get('v')})
+        if not is_address_tag(tag_name):
+            tags.append({'key': clear_tag_name, 'value': tag.get('v')})
 
-    return {'tags': tags}, fixme_count
+    if address['country'] is None:
+        address['country'] = 'CZ'
+
+    return {'tags': tags, 'address': address}, fixme_count
 
 
 def parse_float(coord_as_string):
@@ -74,7 +119,9 @@ def clean_fields(node, fields):
             final_node[field] = node.get(field).strip()
 
     tags, fixme_count = get_tags(node)
-    final_node['tags'] = tags
+
+    final_node['tags'] = tags['tags']
+    final_node['address'] = tags['address']
 
     return final_node, fixme_count
 
