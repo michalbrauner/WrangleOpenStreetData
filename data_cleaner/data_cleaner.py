@@ -31,6 +31,9 @@ def check_and_clean_country(country):
 
 
 def check_and_clean_postcode(postcode):
+
+    postcode = re.sub(r'[\s]', '', postcode)
+
     if not re.match(r'^[0-9]{5}$', postcode):
         raise ValueError('Postcode \'{}\' is invalid'.format(postcode))
 
@@ -38,7 +41,10 @@ def check_and_clean_postcode(postcode):
 
 
 def check_and_clean_housenumber(housenumber):
-    if not re.match(r'^([0-9]+){1}([/]{1}[0-9a-z]+){0,1}$', housenumber):
+
+    housenumber = re.sub(r'^ev[.]{1}', '', housenumber)
+
+    if not re.match(r'^([0-9]+){1}([/]{1}[0-9a-zA-Z]+){0,1}$', housenumber):
         raise ValueError('Housenumber \'{}\' is invalid'.format(housenumber))
 
     return housenumber
@@ -75,8 +81,19 @@ def get_tags(node):
         if not is_address_tag(tag_name):
             tags.append({'key': clear_tag_name, 'value': tag.get('v')})
 
+    # In case we have some address and not filled country, we use default value 'CZ'
     if address['country'] is None:
-        address['country'] = 'CZ'
+        for field_name in address:
+            if address[field_name] is not None:
+                address['country'] = 'CZ'
+
+    # If there is only empty street but everything is set, we assume we are able to identify the place by postcode
+    # and also by ref:ruian:addr tag
+    if address['country'] is not None and address['street'] is None:
+        for tag in tags:
+            if tag['key'] == 'ref:ruian:addr':
+                address['street'] = ''
+                break
 
     return {'tags': tags, 'address': address}, fixme_count
 
