@@ -2,6 +2,14 @@ version: '2'
 
 services:
 
+  mongoclient:
+    image: mongoclient/mongoclient:2.1.0
+    container_name: "mongodb_client"
+    volumes_from:
+      - mongodata_client
+    ports:
+      - 3000:3000
+
   mongo:
     image: mongo:3.4
     container_name: "mongodb"
@@ -12,8 +20,12 @@ services:
       - mongodata
     ports:
         - 27017:27017
-    command: mongod --smallfiles --logpath=/dev/null # --quiet
+    command: mongod --smallfiles --logpath=/dev/null
 
   mongodata:
       image: mongo:3.4
+      command: "true"
+
+  mongodata_client:
+      image: mongoclient/mongoclient:2.1.0
       command: "true"

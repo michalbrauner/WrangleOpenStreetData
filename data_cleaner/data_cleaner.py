@@ -27,7 +27,12 @@ def check_and_clean_street_name(street):
 
 
 def check_and_clean_country(country):
-    return country.upper()
+    country = country.upper()
+
+    if country != 'CZ':
+        raise ValueError('Country \'{}\' is invalid'.format(country))
+
+    return country
 
 
 def check_and_clean_postcode(postcode):
@@ -91,7 +96,7 @@ def get_tags(node):
     # and also by ref:ruian:addr tag
     if address['country'] is not None and address['street'] is None:
         for tag in tags:
-            if tag['key'] == 'ref:ruian:addr':
+            if tag['key'] in ['ref:ruian:addr', 'ref:ruian']:
                 address['street'] = ''
                 break
 
