@@ -11,7 +11,10 @@ INVALID_ADDRESS_FILE = 'invalid_address.json'
 
 def insert_elements_into_db(elements):
     client = pymongo.MongoClient('mongodb://localhost:27017/')
-    db = client.openstreetmap_db
+    db = client.openstreetmap
+
+    db.elements.drop()
+
     result = db.elements.insert_many(elements)
 
     return result.inserted_ids

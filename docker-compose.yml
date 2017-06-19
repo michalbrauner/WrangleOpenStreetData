@@ -5,6 +5,8 @@ services:
   mongoclient:
     image: mongoclient/mongoclient:2.1.0
     container_name: "mongodb_client"
+    depends_on:
+          - mongo
     volumes_from:
       - mongodata_client
     ports:
