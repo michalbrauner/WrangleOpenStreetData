@@ -144,6 +144,7 @@ def clean_fields(node, fields):
 
     final_node['tags'] = tags['tags']
     final_node['address'] = tags['address']
+    final_node['type'] = node.tag
 
     return final_node, fixme_count
 

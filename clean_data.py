@@ -60,16 +60,15 @@ def main():
 
         if event == 'start':
             if elem.tag == 'node':
-                element['type'] = 'node'
-                element['data'], fixme_count_in_element = dc.clean_node(elem)
+                element, fixme_count_in_element = dc.clean_node(elem)
 
                 elements_count[elem.tag] = elements_count[elem.tag] + 1
                 elements_count['total'] = elements_count['total'] + 1
 
                 if fixme_count_in_element > 0:
                     elements_count['skipped'] = elements_count['skipped'] + 1
-                elif not address_is_empty(element['data']['address']) \
-                        and address_is_not_complete(element['data']['address']):
+                elif not address_is_empty(element['address']) \
+                        and address_is_not_complete(element['address']):
 
                     if address_not_empty_and_not_complete_count > 0:
                         invalid_addressess_stream.write(',')
@@ -81,14 +80,13 @@ def main():
 
                     elements_count['skipped'] = elements_count['skipped'] + 1
                 else:
-                    if not address_is_empty(element['data']['address']):
+                    if not address_is_empty(element['address']):
                         address_not_empty_count = address_not_empty_count + 1
 
                     elements.append(element)
 
             elif elem.tag == 'way':
-                element['type'] = 'way'
-                element['data'], fixme_count_in_element = dc.clean_way(elem)
+                element, fixme_count_in_element = dc.clean_way(elem)
 
                 elements_count[elem.tag] = elements_count[elem.tag] + 1
                 elements_count['total'] = elements_count['total'] + 1
@@ -99,8 +97,7 @@ def main():
                     elements_count['skipped'] = elements_count['skipped'] + 1
 
             elif elem.tag == 'relation':
-                element['type'] = 'relation'
-                element['data'], fixme_count_in_element = dc.clean_relation(elem)
+                element, fixme_count_in_element = dc.clean_relation(elem)
 
                 elements_count[elem.tag] = elements_count[elem.tag] + 1
                 elements_count['total'] = elements_count['total'] + 1
@@ -137,7 +134,7 @@ def main():
 
 
 def convert_element_to_serializable(element):
-    element_to_save = element['data']
+    element_to_save = element
     element_to_save['timestamp'] = element_to_save['timestamp'].timestamp()
 
     return element_to_save
