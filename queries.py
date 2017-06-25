@@ -1,4 +1,4 @@
-import pymongo, pprint
+import pymongo
 
 
 def main():
