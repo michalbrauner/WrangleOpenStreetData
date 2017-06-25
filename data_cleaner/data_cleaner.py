@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from dateutil.parser import parse
 
 BASIC_FIELDS_TO_GET = ['changeset', 'id', 'timestamp', 'uid', 'user', 'version']
@@ -8,7 +9,16 @@ RELATION_FIELDS_TO_GET = BASIC_FIELDS_TO_GET
 
 FLOAT_REG = '^[0-9]+([.]{1}[0-9]+){0,1}$'
 INT_REG = '^[0-9]+$'
-VALID_TAG_NAME = re.compile(r'^(ref:([A-Za-z_0-9.]+){1})$|^(([a-z_]+){1}([:]{1}([a-z_0-9]+))*)$')
+VALID_TAG_NAME = re.compile(r'^(([A-Za-z_0-9\-]+){1}([:]{1}([A-Za-z_0-9.\-]+))*)$')
+VALID_HOUSE_NUMBER = '([0-9]+[0-9a-zA-Z]*){1}([/]{1}[0-9a-zA-Z\-]+){0,1}'
+VALID_STREET_NAME = '[^;]+'
+VALID_POSTCODE = '[0-9]{5}'
+
+
+def strip_diacritic(value):
+    normalized = unicodedata.normalize("NFKD", value)
+
+    return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
 
 
 def clean_tag_name(tag_name):
@@ -20,7 +30,12 @@ def is_address_tag(tag_name):
 
 
 def check_and_clean_street_name(street):
-    if not re.match(r'^[\w.\s-]+$', street):
+
+    street_more_parts = re.match(r'^({});({})$'.format(VALID_STREET_NAME, VALID_STREET_NAME), street)
+    if street_more_parts:
+        street = street_more_parts.group(1)
+
+    if not re.match(r'^{}$'.format(VALID_STREET_NAME), street):
         raise ValueError('Street \'{}\' has an invalid name'.format(street))
 
     return street
@@ -39,7 +54,19 @@ def check_and_clean_postcode(postcode):
 
     postcode = re.sub(r'[\s]', '', postcode)
 
-    if not re.match(r'^[0-9]{5}$', postcode):
+    if postcode.startswith('CZ-'):
+        postcode = postcode.replace('CZ-', '')
+
+    if postcode.startswith('CZ'):
+        postcode = postcode.replace('CZ', '')
+
+    postcode = re.sub(r'Praha[0-9]{1,2}$', '', postcode)
+
+    postcode_more_parts = re.match(r'^({});({})$'.format(VALID_POSTCODE, VALID_POSTCODE), postcode)
+    if postcode_more_parts:
+        postcode = postcode_more_parts.group(1)
+
+    if not re.match(r'^{}$'.format(VALID_POSTCODE), postcode):
         raise ValueError('Postcode \'{}\' is invalid'.format(postcode))
 
     return postcode
@@ -49,7 +76,20 @@ def check_and_clean_housenumber(housenumber):
 
     housenumber = re.sub(r'^ev[.]{1}', '', housenumber)
 
-    if not re.match(r'^([0-9]+){1}([/]{1}[0-9a-zA-Z]+){0,1}$', housenumber):
+    if housenumber.startswith('?/'):
+        housenumber = housenumber.replace('?/', '')
+
+    if re.match(r'^/[0-9]+$', housenumber):
+        housenumber = housenumber.replace('/', '')
+
+    housenumber = re.sub(r'[\s]', '', housenumber)
+    housenumber = re.sub(r'[,;][\w]+[.][\w]+', '', housenumber)
+
+    housenumber_more_parts = re.match(r'^({});({})$'.format(VALID_HOUSE_NUMBER, VALID_HOUSE_NUMBER), housenumber)
+    if housenumber_more_parts:
+        housenumber = housenumber_more_parts.group(1)
+
+    if not re.match(r'^{}$'.format(VALID_HOUSE_NUMBER), housenumber):
         raise ValueError('Housenumber \'{}\' is invalid'.format(housenumber))
 
     return housenumber
@@ -62,10 +102,10 @@ def get_tags(node):
     fixme_count = 0
 
     for tag in node.iter("tag"):
-        tag_name = tag.get('k')
+        tag_name = strip_diacritic(tag.get('k'))
 
         # @see http://wiki.openstreetmap.org/wiki/Key:uir_adr:ADRESA_KOD
-        if not re.match(VALID_TAG_NAME, tag_name) and tag_name not in ['uir_adr:ADRESA_KOD', 'FIXME', 'WIFI:SSID']:
+        if not re.match(VALID_TAG_NAME, tag_name):
             raise ValueError('Invalid tag name \'{}\' for id={}'.format(tag_name, node.get('id')))
 
         clear_tag_name = clean_tag_name(tag_name)

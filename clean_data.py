@@ -2,18 +2,19 @@ import configuration
 import xml.etree.cElementTree as ET
 import pprint
 import data_cleaner.data_cleaner as dc
-import io, json
+import io, json, os, sys
 import pymongo
 
 
-INVALID_ADDRESS_FILE = 'invalid_address.json'
+INVALID_ITEMS_FILE = 'invalid_items.json'
+SAVE_TO_DATABASE_EACH_N_ELEMENTS = 10000
 
 
-def insert_elements_into_db(elements):
-    client = pymongo.MongoClient('mongodb://localhost:27017/')
+def insert_elements_into_db(client, elements):
     db = client.openstreetmap
 
-    db.elements.drop()
+    if len(elements) == 0:
+        return []
 
     result = db.elements.insert_many(elements)
 
@@ -41,7 +42,11 @@ def address_is_not_complete(address):
 
 
 def main():
-    osm_file = open(configuration.SAMPLE_FILE, 'r', encoding='utf8')
+    osm_file_path = configuration.OSM_FILE
+
+    osm_file_size = os.path.getsize(osm_file_path)
+    osm_file = open(osm_file_path, 'r', encoding='utf8')
+
     elements = []
     elements_count = {'node': 0, 'way': 0, 'relation': 0, 'skipped': 0, 'total': 0, 'fixme_tag_count': 0}
     non_existing_node_types = set([])
@@ -51,77 +56,113 @@ def main():
     address_not_empty_count = 0
     address_not_empty_and_not_complete_count = 0
 
-    invalid_addressess_stream = io.open(INVALID_ADDRESS_FILE, 'w', encoding='utf-8')
-    invalid_addressess_stream.write('[')
+    invalid_items_stream = io.open(INVALID_ITEMS_FILE, 'w', encoding='utf-8')
+    invalid_items_stream.write('[')
+
+    osm_file.seek(0)
+
+    client = pymongo.MongoClient('mongodb://localhost:27017/')
+    client.openstreetmap.elements.drop()
+    pymongo.write_concern.WriteConcern(w=1, j=False)
+
+    print('Phase 1 - data cleaning and saving into database')
+    print('----------------------------')
+    sys.stdout.flush()
 
     for event, elem in ET.iterparse(osm_file, events=['start', 'end']):
-        element = {}
+
         fixme_count_in_element = 0
 
-        if event == 'start':
-            if elem.tag == 'node':
-                element, fixme_count_in_element = dc.clean_node(elem)
+        current_position = osm_file.tell()
+        completed = round(100 * (current_position / osm_file_size))
 
-                elements_count[elem.tag] = elements_count[elem.tag] + 1
-                elements_count['total'] = elements_count['total'] + 1
+        print(' --> {}% complete                           '.format(completed), end="\r")
+        sys.stdout.flush()
 
-                if fixme_count_in_element > 0:
-                    elements_count['skipped'] = elements_count['skipped'] + 1
-                elif not address_is_empty(element['address']) \
-                        and address_is_not_complete(element['address']):
+        try:
+            if event == 'start':
+                if elem.tag == 'node':
+                    element, fixme_count_in_element = dc.clean_node(elem)
 
-                    if address_not_empty_and_not_complete_count > 0:
-                        invalid_addressess_stream.write(',')
+                    elements_count[elem.tag] = elements_count[elem.tag] + 1
+                    elements_count['total'] = elements_count['total'] + 1
 
-                    invalid_addressess_stream.write(json.dumps(convert_element_to_serializable(element)))
+                    if fixme_count_in_element > 0:
+                        elements_count['skipped'] = elements_count['skipped'] + 1
+                    elif not address_is_empty(element['address']) \
+                            and address_is_not_complete(element['address']):
 
-                    address_not_empty_and_not_complete_count = address_not_empty_and_not_complete_count + 1
-                    address_not_empty_count = address_not_empty_count + 1
+                        write_to_invalid_stream_file(address_not_empty_and_not_complete_count, element,
+                                                     invalid_items_stream)
 
-                    elements_count['skipped'] = elements_count['skipped'] + 1
-                else:
-                    if not address_is_empty(element['address']):
+                        address_not_empty_and_not_complete_count = address_not_empty_and_not_complete_count + 1
                         address_not_empty_count = address_not_empty_count + 1
 
-                    elements.append(element)
+                        elements_count['skipped'] = elements_count['skipped'] + 1
+                    else:
+                        if not address_is_empty(element['address']):
+                            address_not_empty_count = address_not_empty_count + 1
 
-            elif elem.tag == 'way':
-                element, fixme_count_in_element = dc.clean_way(elem)
+                        elements.append(element)
 
-                elements_count[elem.tag] = elements_count[elem.tag] + 1
-                elements_count['total'] = elements_count['total'] + 1
+                elif elem.tag == 'way':
+                    element, fixme_count_in_element = dc.clean_way(elem)
 
-                if fixme_count_in_element == 0:
-                    elements.append(element)
-                else:
-                    elements_count['skipped'] = elements_count['skipped'] + 1
+                    elements_count[elem.tag] = elements_count[elem.tag] + 1
+                    elements_count['total'] = elements_count['total'] + 1
 
-            elif elem.tag == 'relation':
-                element, fixme_count_in_element = dc.clean_relation(elem)
+                    if fixme_count_in_element == 0:
+                        elements.append(element)
+                    else:
+                        elements_count['skipped'] = elements_count['skipped'] + 1
 
-                elements_count[elem.tag] = elements_count[elem.tag] + 1
-                elements_count['total'] = elements_count['total'] + 1
+                elif elem.tag == 'relation':
+                    element, fixme_count_in_element = dc.clean_relation(elem)
 
-                if fixme_count_in_element == 0:
-                    elements.append(element)
-                else:
-                    elements_count['skipped'] = elements_count['skipped'] + 1
+                    elements_count[elem.tag] = elements_count[elem.tag] + 1
+                    elements_count['total'] = elements_count['total'] + 1
 
-            elif elem.tag != 'osm' and len(elements_structure) == 1:
-                non_existing_node_types.add(elem.tag)
+                    if fixme_count_in_element == 0:
+                        elements.append(element)
+                    else:
+                        elements_count['skipped'] = elements_count['skipped'] + 1
 
-            elements_count['fixme_tag_count'] = elements_count['fixme_tag_count'] + fixme_count_in_element
+                elif elem.tag != 'osm' and len(elements_structure) == 1:
+                    non_existing_node_types.add(elem.tag)
+
+                elements_count['fixme_tag_count'] = elements_count['fixme_tag_count'] + fixme_count_in_element
+        except ValueError as e:
+            element = dict(error=e.__str__(), tag=elem.tag, tag_id=elem.get('id'))
+
+            write_to_invalid_stream_file(address_not_empty_and_not_complete_count, element, invalid_items_stream)
 
         if event == 'start':
-            elements_structure.append(elem.tag)
+            elements_structure.append(elem)
 
         if event == 'end':
-            elements_structure.pop()
+            parent = elements_structure.pop()
+            parent.clear()
 
-    invalid_addressess_stream.write(']');
-    invalid_addressess_stream.close()
+        elem.clear()
 
-    insert_elements_into_db(elements)
+        if len(elements) >= SAVE_TO_DATABASE_EACH_N_ELEMENTS:
+
+            print(' --> {}% complete (writing to database)'.format(completed), end="\r")
+            sys.stdout.flush()
+
+            insert_elements_into_db(client, elements)
+
+            del elements[:]
+            del elements
+            elements = []
+
+    insert_elements_into_db(client, elements)
+
+    invalid_items_stream.write(']')
+    invalid_items_stream.close()
+
+    print('\n\nPhase 2 - stats')
+    print('----------------------------\n')
 
     pprint.pprint('Unknown element types:')
     pprint.pprint(non_existing_node_types)
@@ -133,9 +174,18 @@ def main():
     pprint.pprint('{} / {}'.format(address_not_empty_and_not_complete_count, address_not_empty_count))
 
 
+def write_to_invalid_stream_file(address_not_empty_and_not_complete_count, element, invalid_items_stream):
+    if address_not_empty_and_not_complete_count > 0:
+        invalid_items_stream.write(',')
+
+    invalid_items_stream.write(json.dumps(convert_element_to_serializable(element)))
+
+
 def convert_element_to_serializable(element):
     element_to_save = element
-    element_to_save['timestamp'] = element_to_save['timestamp'].timestamp()
+
+    if 'timestamp' in element_to_save:
+        element_to_save['timestamp'] = element_to_save['timestamp'].timestamp()
 
     return element_to_save
 
